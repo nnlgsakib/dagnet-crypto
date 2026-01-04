@@ -1,9 +1,10 @@
 package network
 
 import (
-	"context"
+	"encoding/binary"
 	"fmt"
 	"io"
+	"sync"
 	"time"
 
 	"github.com/libp2p/go-libp2p-core/network"
@@ -14,207 +15,275 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-// SyncProtocol implements the request-response synchronization protocol
 const (
 	syncProtocolID = "/ndag/sync/1.0.0"
-	MaxSyncEvents  = 1000
-	SyncTimeout    = 30 * time.Second
+	dhtProtocolID  = "/ndag/dht/1.0.0"
+	
+	// Production sync limits
+	MaxSyncBatchSize   = 100
+	MaxSyncRounds      = 1000
+	SyncRequestTimeout = 30 * time.Second
+	SyncRetryAttempts  = 3
+	SyncRetryDelay     = 5 * time.Second
+	
+	MaxMessageSize = 4 * 1024 * 1024 // 4MB
 )
 
-// SyncManager handles synchronization with peers
+// SyncManager handles all synchronization operations
 type SyncManager struct {
 	network *P2PNetwork
+	peers   map[peer.ID]*SyncPeer
+	mu      sync.RWMutex
+	ctx     context.Context
+	cancel  context.CancelFunc
 }
 
-// NewSyncManager creates a new sync manager
+type SyncPeer struct {
+	ID         peer.ID
+	LastSync   time.Time
+	Round      uint64
+	Connected  bool
+	Retries    int
+}
+
 func NewSyncManager(network *P2PNetwork) *SyncManager {
+	ctx, cancel := context.WithCancel(network.ctx)
+	
 	sm := &SyncManager{
 		network: network,
+		peers:   make(map[peer.ID]*SyncPeer),
+		ctx:     ctx,
+		cancel:  cancel,
 	}
-
-	// Register stream handler
+	
+	// Register sync protocol handler
 	network.host.SetStreamHandler(syncProtocolID, sm.handleSyncStream)
-
+	
+	// Start background sync
+	go sm.syncLoop()
+	
 	return sm
 }
 
-// SyncWithPeer synchronizes events with a specific peer
-func (sm *SyncManager) SyncWithPeer(ctx context.Context, peerID peer.ID, startRound, endRound uint64) error {
-	// Open stream to peer
+func (sm *SyncManager) syncLoop() {
+	ticker := time.NewTicker(10 * time.Second)
+	defer ticker.Stop()
+	
+	for {
+		select {
+		case <-sm.ctx.Done():
+			return
+		case <-ticker.C:
+			sm.syncWithPeers()
+		}
+	}
+}
+
+func (sm *SyncManager) syncWithPeers() {
+	peers := sm.network.GetPeers()
+	if len(peers) == 0 {
+		log.Debug().Msg("No peers to sync with")
+		return
+	}
+	
+	for _, peerInfo := range peers {
+		go sm.syncWithPeer(peerInfo.ID)
+	}
+}
+
+func (sm *SyncManager) syncWithPeer(peerID peer.ID) error {
+	// Check if already syncing
+	sm.mu.Lock()
+	if peer, exists := sm.peers[peerID]; exists && !peer.Connected {
+		sm.mu.Unlock()
+		return nil
+	}
+	sm.peers[peerID] = &SyncPeer{ID: peerID, Connected: true}
+	sm.mu.Unlock()
+	
+	defer func() {
+		sm.mu.Lock()
+		if peer := sm.peers[peerID]; peer != nil {
+			peer.Connected = false
+		}
+		sm.mu.Unlock()
+	}()
+	
+	// Open stream
+	ctx, cancel := context.WithTimeout(sm.ctx, SyncRequestTimeout)
+	defer cancel()
+	
 	stream, err := sm.network.host.NewStream(ctx, peerID, syncProtocolID)
 	if err != nil {
-		return errors.Wrapf(err, "failed to open sync stream to peer %s", peerID)
+		return errors.Wrapf(err, "failed to connect to peer %s", peerID)
 	}
 	defer stream.Close()
-
-	// Create sync request
+	
+	// Get our latest round
+	latestRound := sm.network.consensus.CurrentRound()
+	
+	// Send sync request
 	req := &pb.SyncDAGRequest{
-		StartRound: startRound,
-		EndRound:   endRound,
-		Limit:      MaxSyncEvents,
+		StartRound: latestRound + 1,
+		EndRound:   latestRound + MaxSyncRounds,
+		Limit:      MaxSyncBatchSize,
 	}
-
-	// Send request
+	
 	reqData, err := proto.Marshal(req)
 	if err != nil {
 		return errors.Wrap(err, "failed to marshal sync request")
 	}
-
-	if err := writeMessageWithTimeout(stream, reqData, SyncTimeout); err != nil {
+	
+	if err := writeMessageWithTimeout(stream, reqData, SyncRequestTimeout); err != nil {
 		return errors.Wrap(err, "failed to send sync request")
 	}
-
+	
 	// Read responses
+	eventsReceived := 0
 	for {
-		respData, err := readMessageWithTimeout(stream, SyncTimeout)
+		respData, err := readMessageWithTimeout(stream, SyncRequestTimeout)
 		if err != nil {
 			if err == io.EOF {
-				break // Sync complete
+				break
 			}
 			return errors.Wrap(err, "failed to read sync response")
 		}
-
+		
 		var resp pb.SyncDAGResponse
 		if err := proto.Unmarshal(respData, &resp); err != nil {
 			return errors.Wrap(err, "failed to unmarshal sync response")
 		}
-
-		// Process received events
+		
+		// Add event to DAG
 		if resp.Event != nil {
 			if err := sm.network.dag.AddEvent(resp.Event); err != nil {
 				log.Warn().Err(err).Str("event_id", resp.Event.Id).Msg("Failed to add synced event")
+			} else {
+				eventsReceived++
+				if err := sm.network.storage.PutEvent(resp.Event.Id, mustMarshal(resp.Event)); err != nil {
+					log.Error().Err(err).Str("event_id", resp.Event.Id).Msg("Failed to store event")
+				}
 			}
 		}
-
-		// Process transactions
+		
+		// Add transactions to mempool
 		for _, tx := range resp.Transactions {
-			if err := sm.network.mempool.Add(tx); err != nil {
-				log.Warn().Err(err).Str("tx_id", tx.Id).Msg("Failed to add synced transaction")
+			if !sm.network.mempool.Has(tx.Id) {
+				if added := sm.network.mempool.Add(tx); added {
+					log.Debug().Str("tx_id", tx.Id).Msg("Added synced transaction to mempool")
+				}
 			}
 		}
-
+		
 		if !resp.HasMore {
 			break
 		}
 	}
-
+	
 	log.Info().
 		Str("peer", peerID.String()).
-		Uint64("start_round", startRound).
-		Uint64("end_round", endRound).
+		Int("events", eventsReceived).
 		Msg("Sync completed")
-
+	
 	return nil
 }
 
-// handleSyncStream handles incoming sync requests
 func (sm *SyncManager) handleSyncStream(stream network.Stream) {
 	defer stream.Close()
-
+	
 	peerID := stream.Conn().RemotePeer()
-	log.Info().Str("peer", peerID.String()).Msg("Sync stream opened")
-
+	log.Debug().Str("peer", peerID.String()).Msg("Sync stream opened")
+	
 	// Read request
-	reqData, err := readMessageWithTimeout(stream, SyncTimeout)
+	reqData, err := readMessageWithTimeout(stream, SyncRequestTimeout)
 	if err != nil {
 		log.Error().Err(err).Str("peer", peerID.String()).Msg("Failed to read sync request")
 		return
 	}
-
+	
 	var req pb.SyncDAGRequest
 	if err := proto.Unmarshal(reqData, &req); err != nil {
 		log.Error().Err(err).Str("peer", peerID.String()).Msg("Failed to unmarshal sync request")
 		return
 	}
-
-	log.Info().
+	
+	log.Debug().
 		Str("peer", peerID.String()).
-		Uint64("start_round", req.StartRound).
-		Uint64("end_round", req.EndRound).
-		Msg("Received sync request")
-
+		Uint64("start", req.StartRound).
+		Uint64("end", req.EndRound).
+		Msg("Processing sync request")
+	
 	// Send events in batches
 	sent := 0
-	for round := req.StartRound; round <= req.EndRound; round++ {
+	for round := req.StartRound; round <= req.EndRound && sent < int(req.Limit); round++ {
 		events := sm.network.dag.GetEventsByRound(round)
-
+		
 		for _, event := range events {
-			// Skip if already sent limit
-			if sent >= int(req.Limit) {
-				break
-			}
-
 			resp := &pb.SyncDAGResponse{
-				Event: event,
-				HasMore: sent < len(events)-1 || round < req.EndRound,
+				Event:   event,
+				HasMore: round < req.EndRound || sent < len(events)-1,
 			}
-
+			
 			respData, err := proto.Marshal(resp)
 			if err != nil {
 				log.Error().Err(err).Str("event_id", event.Id).Msg("Failed to marshal sync response")
 				continue
 			}
-
-			if err := writeMessageWithTimeout(stream, respData, SyncTimeout); err != nil {
+			
+			if err := writeMessageWithTimeout(stream, respData, SyncRequestTimeout); err != nil {
 				log.Error().Err(err).Str("peer", peerID.String()).Msg("Failed to send sync response")
 				return
 			}
-
+			
 			sent++
 		}
 	}
-
-	// Send end marker
-	resp := &pb.SyncDAGResponse{
-		Event:   nil,
-		HasMore: false,
-	}
-
+	
+	// Send final response
+	resp := &pb.SyncDAGResponse{Event: nil, HasMore: false}
 	respData, err := proto.Marshal(resp)
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to marshal final sync response")
 		return
 	}
-
-	if err := writeMessageWithTimeout(stream, respData, SyncTimeout); err != nil {
+	
+	if err := writeMessageWithTimeout(stream, respData, SyncRequestTimeout); err != nil {
 		log.Error().Err(err).Str("peer", peerID.String()).Msg("Failed to send final sync response")
 	}
-
-	log.Info().
+	
+	log.Debug().
 		Str("peer", peerID.String()).
 		Int("sent", sent).
 		Msg("Sync stream closed")
 }
 
-// writeMessageWithTimeout writes a length-prefixed message with timeout
 func writeMessageWithTimeout(stream network.Stream, data []byte, timeout time.Duration) error {
 	deadline := time.Now().Add(timeout)
 	if err := stream.SetWriteDeadline(deadline); err != nil {
 		return errors.Wrap(err, "failed to set write deadline")
 	}
-
-	// Write length (4 bytes)
+	
+	// Write length prefix (4 bytes)
 	length := uint32(len(data))
 	if err := binary.Write(stream, binary.BigEndian, length); err != nil {
 		return errors.Wrap(err, "failed to write message length")
 	}
-
+	
 	// Write data
 	if _, err := stream.Write(data); err != nil {
 		return errors.Wrap(err, "failed to write message data")
 	}
-
+	
 	return nil
 }
 
-// readMessageWithTimeout reads a length-prefixed message with timeout
 func readMessageWithTimeout(stream network.Stream, timeout time.Duration) ([]byte, error) {
 	deadline := time.Now().Add(timeout)
 	if err := stream.SetReadDeadline(deadline); err != nil {
 		return nil, errors.Wrap(err, "failed to set read deadline")
 	}
-
-	// Read length (4 bytes)
+	
+	// Read length prefix (4 bytes)
 	var length uint32
 	if err := binary.Read(stream, binary.BigEndian, &length); err != nil {
 		if err == io.EOF {
@@ -222,84 +291,25 @@ func readMessageWithTimeout(stream network.Stream, timeout time.Duration) ([]byt
 		}
 		return nil, errors.Wrap(err, "failed to read message length")
 	}
-
-	// Validate length
-	if length > MaxMessageSize {
+	
+	// Validate length (prevent DoS)
+	if length > uint32(MaxMessageSize) {
 		return nil, errors.Errorf("message too large: %d bytes", length)
 	}
-
+	
 	// Read data
 	data := make([]byte, length)
 	if _, err := io.ReadFull(stream, data); err != nil {
 		return nil, errors.Wrap(err, "failed to read message data")
 	}
-
+	
 	return data, nil
 }
 
-// SyncDAGRange synchronizes events for a range of rounds
-func (sm *SyncManager) SyncDAGRange(ctx context.Context, startRound, endRound uint64) error {
-	// Get connected peers
-	peers := sm.network.GetPeers()
-	if len(peers) == 0 {
-		return errors.New("no peers available for sync")
+func mustMarshal(msg proto.Message) []byte {
+	data, err := proto.Marshal(msg)
+	if err != nil {
+		panic(fmt.Sprintf("failed to marshal: %v", err))
 	}
-
-	// Sync with multiple peers in parallel
-	var wg sync.WaitGroup
-	errors := make(chan error, len(peers))
-
-	for _, peerInfo := range peers {
-		wg.Add(1)
-		go func(p peer.AddrInfo) {
-			defer wg.Done()
-			if err := sm.SyncWithPeer(ctx, p.ID, startRound, endRound); err != nil {
-				errors <- err
-			}
-		}(peerInfo)
-	}
-
-	wg.Wait()
-	close(errors)
-
-	// Check if any sync succeeded
-	successCount := 0
-	for err := range errors {
-		if err == nil {
-			successCount++
-		} else {
-			log.Warn().Err(err).Msg("Sync with peer failed")
-		}
-	}
-
-	if successCount == 0 {
-		return errors.New("failed to sync with all peers")
-	}
-
-	return nil
-}
-
-// GetMissingEvents requests missing events from peers
-func (sm *SyncManager) GetMissingEvents(ctx context.Context, eventIDs []string) error {
-	peers := sm.network.GetPeers()
-	if len(peers) == 0 {
-		return errors.New("no peers available")
-	}
-
-	// Request each missing event from a random peer
-	for _, eventID := range eventIDs {
-		peer := peers[rand.Intn(len(peers))]
-		if err := sm.requestEvent(ctx, peer.ID, eventID); err != nil {
-			log.Warn().Err(err).Str("event_id", eventID).Msg("Failed to request missing event")
-		}
-	}
-
-	return nil
-}
-
-// requestEvent requests a single event from a peer
-func (sm *SyncManager) requestEvent(ctx context.Context, peerID peer.ID, eventID string) error {
-	// This would implement a separate protocol for fetching individual events
-	// For now, return not implemented
-	return errors.New("requestEvent not yet implemented")
+	return data
 }
