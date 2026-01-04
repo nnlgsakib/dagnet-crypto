@@ -7,6 +7,7 @@ import (
     "time"
 
     "github.com/ndag/ndagcoin/pkg/pb"
+    "github.com/rs/zerolog/log"
 )
 
 // DAG represents the directed acyclic graph of events
@@ -240,6 +241,7 @@ type ConsensusEngine struct {
     validators map[string]*Validator
     currentRound uint64
     finality chan *FinalityEvent
+    eventChan chan *pb.Event
     mu sync.RWMutex
 }
 
@@ -257,7 +259,48 @@ func NewConsensusEngine(dag *DAG) *ConsensusEngine {
         dag: dag,
         validators: make(map[string]*Validator),
         finality: make(chan *FinalityEvent, 100),
+        eventChan: make(chan *pb.Event, 1000),
     }
+}
+
+// Start starts the consensus engine
+func (e *ConsensusEngine) Start(ctx context.Context) {
+    log.Info().Msg("Consensus engine started")
+    
+    // Monitor event channel
+    go func() {
+        for {
+            select {
+            case <-ctx.Done():
+                log.Info().Msg("Consensus engine shutting down")
+                e.Stop()
+                return
+            case event := <-e.eventChan:
+                if err := e.dag.AddEvent(event); err != nil {
+                    log.Warn().Err(err).Str("event_id", event.Id).Msg("Failed to add event")
+                } else {
+                    log.Debug().Str("event_id", event.Id).Msg("Event added to DAG")
+                    // Check for finality
+                    e.CheckFinality(event.Id)
+                }
+            }
+        }
+    }()
+}
+
+// ReceiveEvent adds an event to the consensus engine for processing
+func (e *ConsensusEngine) ReceiveEvent(event *pb.Event) error {
+    select {
+    case e.eventChan <- event:
+        return nil
+    default:
+        return errors.New("event channel full")
+    }
+}
+
+// GetNetworkChannel returns the channel for network events
+func (e *ConsensusEngine) GetNetworkChannel() chan<- *pb.Event {
+    return e.eventChan
 }
 
 // Start starts the consensus engine
@@ -300,9 +343,22 @@ func (e *ConsensusEngine) GetValidator(address string) (*Validator, bool) {
 
 // CurrentRound returns the current round
 func (e *ConsensusEngine) CurrentRound() uint64 {
-    e.mu.RLock()
-    defer e.mu.RUnlock()
+    e.mu.Lock()
+    defer e.mu.Unlock()
+    
+    // Calculate current round based on latest event
+    latestRound := e.dag.LatestRound()
+    if latestRound > e.currentRound {
+        e.currentRound = latestRound
+    }
     return e.currentRound
+}
+
+// GetEventChannel returns the event channel from network
+func (e *ConsensusEngine) GetEventChannel() <-chan *pb.Event {
+    // This should be connected to network layer in real implementation
+    // For now, return a buffered channel
+    return make(<-chan *pb.Event, 100)
 }
 
 // DetermineFame determines if witnesses are famous using virtual voting

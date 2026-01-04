@@ -1,0 +1,52 @@
+FROM golang:1.21-alpine AS builder
+
+# Install build dependencies
+RUN apk add --no-cache git make gcc musl-dev
+
+# Set working directory
+WORKDIR /build
+
+# Copy go mod files
+COPY go.mod go.sum ./
+
+# Download dependencies
+RUN go mod download
+
+# Copy source code
+COPY . .
+
+# Build the application
+RUN make build
+
+# Final stage
+FROM alpine:latest
+
+# Install runtime dependencies
+RUN apk add --no-cache ca-certificates bash
+
+# Create app user
+RUN addgroup -g 1000 ndag && \
+    adduser -D -u 1000 -G ndag ndag
+
+# Create directories
+WORKDIR /app
+RUN mkdir -p /app/data /app/config /app/logs && \
+    chown -R ndag:ndag /app
+
+# Copy binary from builder
+COPY --from=builder /build/build/ndagd /usr/local/bin/ndagd
+COPY --from=builder /build/configs /app/configs
+
+# Switch to non-root user
+USER ndag
+
+# Expose ports
+EXPOSE 9000 9090 9091 9092
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+    CMD nc -z localhost 9090 || exit 1
+
+# Set entrypoint
+ENTRYPOINT ["ndagd"]
+CMD ["start", "--config", "/app/config/devnet.toml"]
