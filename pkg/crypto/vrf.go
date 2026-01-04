@@ -61,13 +61,21 @@ func VerifyVRF(publicKey PublicKey, proof VRFProof, message []byte) (bool, []byt
 }
 
 func generateVRFNonce(privKey ed25519.PrivateKey, message []byte) []byte {
-    // Production VRF nonce generation using SHA3-256 for domain separation
+    // Production VRF nonce generation with domain separation and fixed size
+    if len(privKey) == 0 || len(message) == 0 {
+        panic("invalid VRF nonce generation parameters")
+    }
+    
     h := sha3.New256()
-    h.Write([]byte("VRF_NONCE_DOMAIN"))
+    h.Write([]byte("NDAG_VRF_NONCE:v1.0")) // Domain separator
     h.Write(privKey)
     h.Write(message)
+    
     nonce := make([]byte, 32)
-    h.Read(nonce)
+    if _, err := h.Read(nonce); err != nil {
+        panic(fmt.Sprintf("VRF nonce generation failed: %v", err))
+    }
+    
     return nonce
 }
 
