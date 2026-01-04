@@ -1,0 +1,487 @@
+syntax = "proto3";
+
+package ndagcoin.pb;
+
+option go_package = "github.com/ndag/ndagcoin/pkg/pb";
+
+import "event.proto";
+import "consensus.proto";
+import "google/protobuf/empty.proto";
+
+// NodeService provides node-level operations
+service NodeService {
+  // Submit a transaction to the network
+  rpc SubmitTx(SubmitTxRequest) returns (SubmitTxResponse);
+  
+  // Get node status and information
+  rpc GetNodeStatus(google.protobuf.Empty) returns (NodeStatus);
+  
+  // Get peer information
+  rpc GetPeers(google.protobuf.Empty) returns (PeerList);
+  
+  // Sync DAG from other nodes
+  rpc SyncDAG(SyncDAGRequest) returns (stream SyncDAGResponse);
+  
+  // Get a specific event by ID
+  rpc GetEvent(GetEventRequest) returns (Event);
+  
+  // Get a specific transaction by ID
+  rpc GetTx(GetTxRequest) returns (Transaction);
+  
+  // Get state snapshot
+  rpc GetStateSnapshot(GetStateSnapshotRequest) returns (ConsensusSnapshot);
+  
+  // Get account information
+  rpc GetAccount(GetAccountRequest) returns (Account);
+  
+  // Get token information
+  rpc GetToken(GetTokenRequest) returns (Token);
+  
+  // Get NFT information
+  rpc GetNFT(GetNFTRequest) returns (NFT);
+  
+  // Get validator information
+  rpc GetValidator(GetValidatorRequest) returns (Validator);
+  
+  // Get current validator set
+  rpc GetValidatorSet(google.protobuf.Empty) returns (ValidatorSet);
+  
+  // Query balance for an account
+  rpc QueryBalance(QueryBalanceRequest) returns (QueryBalanceResponse);
+  
+  // Query token balance
+  rpc QueryTokenBalance(QueryTokenBalanceRequest) returns (QueryTokenBalanceResponse);
+  
+  // Query NFT ownership
+  rpc QueryNFTOwnership(QueryNFTOwnershipRequest) returns (QueryNFTOwnershipResponse);
+  
+  // Get staking information
+  rpc GetStakingInfo(GetStakingInfoRequest) returns (StakingInfo);
+  
+  // Get epoch information
+  rpc GetEpochInfo(GetEpochInfoRequest) returns (EpochInfo);
+  
+  // Subscribe to new events (streaming)
+  rpc SubscribeEvents(SubscribeEventsRequest) returns (stream Event);
+  
+  // Subscribe to new transactions (streaming)
+  rpc SubscribeTxs(SubscribeTxsRequest) returns (stream Transaction);
+  
+  // Get fee information
+  rpc GetFeeInfo(google.protobuf.Empty) returns (FeeInfo);
+  
+  // Estimate gas for a transaction
+  rpc EstimateGas(EstimateGasRequest) returns (EstimateGasResponse);
+}
+
+// SubmitTxRequest for submitting transactions
+message SubmitTxRequest {
+  Transaction transaction = 1;
+  bool async = 2; // If true, return immediately without waiting for inclusion
+}
+
+// SubmitTxResponse for transaction submission
+message SubmitTxResponse {
+  string tx_id = 1;
+  string status = 2; // "pending", "accepted", "rejected"
+  string error_message = 3;
+  uint64 estimated_gas = 4;
+  int64 timestamp = 5;
+}
+
+// NodeStatus provides node status information
+message NodeStatus {
+  string node_id = 1;
+  string version = 2;
+  string chain_id = 3;
+  string network_id = 4;
+  string status = 5; // "syncing", "active", "paused", "stopped"
+  uint64 latest_round = 6;
+  uint64 latest_epoch = 7;
+  int64 latest_timestamp = 8;
+  uint64 num_peers = 9;
+  uint64 num_events = 10;
+  uint64 num_transactions = 11;
+  bytes latest_state_hash = 12;
+  SyncInfo sync_info = 13;
+  ValidatorInfo validator_info = 14;
+}
+
+// SyncInfo contains synchronization information
+message SyncInfo {
+  uint64 latest_event_height = 1;
+  uint64 latest_event_round = 2;
+  uint64 latest_event_epoch = 3;
+  uint64 catching_up = 4;
+  uint64 total_synced_events = 5;
+  repeated string connected_peers = 6;
+}
+
+// ValidatorInfo contains validator-specific information
+message ValidatorInfo {
+  bool is_validator = 1;
+  string validator_address = 2;
+  uint64 voting_power = 3;
+  uint64 commission_rate = 4;
+  uint64 missed_blocks = 5;
+  bool is_jailed = 6;
+}
+
+// PeerList contains peer information
+message PeerList {
+  repeated PeerInfo peers = 1;
+  uint64 total_peers = 2;
+}
+
+// PeerInfo contains information about a peer
+message PeerInfo {
+  string peer_id = 1;
+  string address = 2;
+  string connection_status = 3; // "connected", "connecting", "disconnected"
+  int64 connection_time = 4;
+  bytes protocol_version = 5;
+  string chain_id = 6;
+  repeated string protocols = 7;
+}
+
+// SyncDAGRequest for requesting DAG synchronization
+message SyncDAGRequest {
+  uint64 start_round = 1;
+  uint64 end_round = 2;
+  repeated string event_ids = 3; // Specific events to fetch
+  string peer_id = 4;
+  bool include_transactions = 5;
+  uint64 limit = 6;
+}
+
+// SyncDAGResponse for DAG synchronization
+message SyncDAGResponse {
+  Event event = 1;
+  repeated Transaction transactions = 2;
+  bool has_more = 3;
+  uint64 next_round = 4;
+}
+
+// GetEventRequest for getting an event
+message GetEventRequest {
+  string event_id = 1;
+  bool include_transactions = 2;
+}
+
+// GetTxRequest for getting a transaction
+message GetTxRequest {
+  string tx_id = 1;
+  bool include_result = 2;
+}
+
+// GetStateSnapshotRequest for getting a state snapshot
+message GetStateSnapshotRequest {
+  uint64 epoch = 1;
+  uint64 round = 2;
+  bool include_events = 3;
+}
+
+// GetAccountRequest for getting account information
+message GetAccountRequest {
+  string address = 1;
+}
+
+// GetTokenRequest for getting token information
+message GetTokenRequest {
+  string token_id = 1;
+}
+
+// GetNFTRequest for getting NFT information
+message GetNFTRequest {
+  string collection_id = 1;
+  string nft_id = 2;
+}
+
+// GetValidatorRequest for getting validator information
+message GetValidatorRequest {
+  string validator_address = 1;
+}
+
+// QueryBalanceRequest for querying account balance
+message QueryBalanceRequest {
+  string address = 1;
+  optional string token_id = 2; // If not set, query native token
+}
+
+// QueryBalanceResponse for balance query
+message QueryBalanceResponse {
+  string address = 1;
+  string token_id = 2; // Empty for native token
+  uint64 balance = 3;
+  int64 last_updated = 4;
+  uint64 nonce = 5;
+}
+
+// QueryTokenBalanceRequest for querying token balance
+message QueryTokenBalanceRequest {
+  string address = 1;
+  string token_id = 2;
+}
+
+// QueryTokenBalanceResponse for token balance query
+message QueryTokenBalanceResponse {
+  string address = 1;
+  string token_id = 2;
+  uint64 balance = 3;
+  int64 last_updated = 4;
+  bool is_frozen = 5;
+  bool is_whitelisted = 6;
+}
+
+// QueryNFTOwnershipRequest for querying NFT ownership
+message QueryNFTOwnershipRequest {
+  string collection_id = 1;
+  string owner = 2;
+}
+
+// QueryNFTOwnershipResponse for NFT ownership query
+message QueryNFTOwnershipResponse {
+  string collection_id = 1;
+  string owner = 2;
+  repeated string nft_ids = 3;
+  uint64 total_count = 4;
+}
+
+// GetStakingInfoRequest for getting staking information
+message GetStakingInfoRequest {
+  string validator_address = 1;
+}
+
+// GetEpochInfoRequest for getting epoch information
+message GetEpochInfoRequest {
+  uint64 epoch = 1;
+}
+
+// SubscribeEventsRequest for subscribing to events
+message SubscribeEventsRequest {
+  uint64 start_round = 1;
+  repeated string filters = 2; // Event type filters
+}
+
+// SubscribeTxsRequest for subscribing to transactions
+message SubscribeTxsRequest {
+  repeated string filters = 1; // Transaction type filters
+  string address = 2; // Filter by address
+}
+
+// FeeInfo provides fee market information
+message FeeInfo {
+  uint64 base_fee = 1;
+  uint64 min_fee = 2;
+  uint64 max_fee = 3;
+  uint64 gas_price = 4;
+  uint64 target_gas_per_round = 5;
+  uint64 current_gas_used = 6;
+  uint64 max_gas_per_round = 7;
+}
+
+// EstimateGasRequest for gas estimation
+message EstimateGasRequest {
+  Transaction transaction = 1;
+}
+
+// EstimateGasResponse for gas estimation
+message EstimateGasResponse {
+  uint64 estimated_gas = 1;
+  uint64 estimated_fee = 2;
+  string error_message = 3;
+}
+
+// WalletService provides wallet operations
+service WalletService {
+  // Generate a new keypair
+  rpc GenerateKey(GenerateKeyRequest) returns (GenerateKeyResponse);
+  
+  // Import an existing key
+  rpc ImportKey(ImportKeyRequest) returns (ImportKeyResponse);
+  
+  // List all keys
+  rpc ListKeys(google.protobuf.Empty) returns (ListKeysResponse);
+  
+  // Get key information
+  rpc GetKey(GetKeyRequest) returns (GetKeyResponse);
+  
+  // Delete a key
+  rpc DeleteKey(DeleteKeyRequest) returns (DeleteKeyResponse);
+  
+  // Sign a transaction
+  rpc SignTx(SignTxRequest) returns (SignTxResponse);
+  
+  // Get mnemonic phrase
+  rpc GetMnemonic(GetMnemonicRequest) returns (GetMnemonicResponse);
+}
+
+// GenerateKeyRequest for key generation
+message GenerateKeyRequest {
+  string key_name = 1;
+  optional string mnemonic = 2;
+  string password = 3;
+}
+
+// GenerateKeyResponse for key generation
+message GenerateKeyResponse {
+  string address = 1;
+  string public_key = 2;
+  string mnemonic = 3;
+}
+
+// ImportKeyRequest for key import
+message ImportKeyRequest {
+  string key_name = 1;
+  string private_key = 2;
+  string password = 3;
+}
+
+// ImportKeyResponse for key import
+message ImportKeyResponse {
+  string address = 1;
+  string public_key = 2;
+  string result = 3;
+}
+
+// ListKeysResponse for listing keys
+message ListKeysResponse {
+  repeated KeyInfo keys = 1;
+}
+
+// KeyInfo contains key information
+message KeyInfo {
+  string name = 1;
+  string address = 2;
+  string public_key = 3;
+  int64 created_at = 4;
+  bool is_validator = 5;
+}
+
+// GetKeyRequest for getting key information
+message GetKeyRequest {
+  string key_name = 1;
+}
+
+// GetKeyResponse for key information
+message GetKeyResponse {
+  KeyInfo key_info = 1;
+}
+
+// DeleteKeyRequest for deleting a key
+message DeleteKeyRequest {
+  string key_name = 1;
+  string password = 2;
+}
+
+// DeleteKeyResponse for key deletion
+message DeleteKeyResponse {
+  string result = 1;
+}
+
+// SignTxRequest for transaction signing
+message SignTxRequest {
+  Transaction transaction = 1;
+  string key_name = 2;
+  string password = 3;
+}
+
+// SignTxResponse for transaction signing
+message SignTxResponse {
+  Transaction signed_transaction = 1;
+  bytes signature = 2;
+  string error_message = 3;
+}
+
+// GetMnemonicRequest for getting mnemonic
+message GetMnemonicRequest {
+  string key_name = 1;
+  string password = 2;
+}
+
+// GetMnemonicResponse for mnemonic retrieval
+message GetMnemonicResponse {
+  string mnemonic = 1;
+}
+
+// AdminService provides administrative operations
+service AdminService {
+  // Get node configuration
+  rpc GetConfig(google.protobuf.Empty) returns (ConfigResponse);
+  
+  // Update node configuration
+  rpc UpdateConfig(UpdateConfigRequest) returns (UpdateConfigResponse);
+  
+  // Get node metrics
+  rpc GetMetrics(google.protobuf.Empty) returns (MetricsResponse);
+  
+  // Get debug information
+  rpc GetDebugInfo(DebugInfoRequest) returns (DebugInfoResponse);
+  
+  // Start/stop the node
+  rpc ControlNode(ControlNodeRequest) returns (ControlNodeResponse);
+  
+  // Get logs
+  rpc GetLogs(GetLogsRequest) returns (GetLogsResponse);
+}
+
+// ConfigResponse provides configuration
+message ConfigResponse {
+  map<string, string> config = 1;
+  string config_file = 2;
+}
+
+// UpdateConfigRequest for updating configuration
+message UpdateConfigRequest {
+  map<string, string> updates = 1;
+  bool restart_required = 2;
+}
+
+// UpdateConfigResponse for configuration update
+message UpdateConfigResponse {
+  string result = 1;
+  bool restart_required = 2;
+}
+
+// MetricsResponse provides node metrics
+message MetricsResponse {
+  map<string, double> metrics = 1;
+  int64 timestamp = 2;
+}
+
+// DebugInfoRequest for debug information
+message DebugInfoRequest {
+  string component = 1; // "consensus", "network", "storage", "mempool", "state"
+}
+
+// DebugInfoResponse for debug information
+message DebugInfoResponse {
+  string component = 1;
+  bytes debug_data = 2;
+  string format = 3;
+}
+
+// ControlNodeRequest for node control
+message ControlNodeRequest {
+  string action = 1; // "start", "stop", "pause", "resume"
+}
+
+// ControlNodeResponse for node control
+message ControlNodeResponse {
+  string status = 1;
+  string message = 2;
+}
+
+// GetLogsRequest for getting logs
+message GetLogsRequest {
+  string level = 1; // "debug", "info", "warn", "error"
+  int64 start_time = 2;
+  int64 end_time = 3;
+  string component = 4;
+}
+
+// GetLogsResponse for log retrieval
+message GetLogsResponse {
+  repeated string logs = 1;
+  int64 total_count = 2;
+}

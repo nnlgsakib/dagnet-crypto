@@ -1,0 +1,75 @@
+# NDAG Coin Development Network Configuration
+
+[network]
+network_id = "ndag-devnet"
+chain_id = "ndag-devnet-v1" 
+data_dir = ".ndag/devnet"
+
+[p2p]
+enabled = true
+listen_address = "/ip4/0.0.0.0/tcp/9000"
+bootstrap_peers = [
+    # Add local bootstrap nodes here if needed
+]
+max_peers = 50
+min_peers = 3
+connection_timeout = "30s"
+enable_nat_traversal = true
+enable_relay = true
+enable_metrics = true
+
+[consensus]
+enabled = true
+round_duration = "1s"
+epoch_duration = "1h"
+min_validator_stake = 1000000      # 1 NDAG
+max_validator_stake = 1000000000   # 1000 NDAG
+min_gas_price = 100                # 100 ndagosas
+max_gas_per_round = 10000000       # 10M gas per round
+target_gas_per_round = 8000000     # 8M target gas
+slashing_enabled = true
+
+[api]
+enabled = true
+listen_address = ":9090"
+enable_rest = true
+rest_listen_address = ":9091"
+enable_grpc = true
+grpc_listen_address = ":9092"
+cors_origins = ["*"]
+enable_metrics = true
+
+[storage]
+backend = "leveldb"
+path = "data"
+enable_pruning = true
+pruning_keep_recent = "24h"
+pruning_interval = "1h"
+compaction_interval = "2h"
+
+[logging]
+level = "info"
+format = "text"  # text or json
+file = ""
+max_size = 100
+max_backups = 10
+max_age = 7
+compress = true
+
+[validator]
+enabled = false  # Set to true to run as validator
+address = ""
+commission_rate = 10000000  # 10% in ndagosas
+key_file = ""
+min_self_stake = 100000000  # 100 NDAG
+
+[genesis]
+genesis_file = "genesis.pb"
+initial_supply = 100000000000000  # 100M NDAG in ndagosas
+
+# Devnet specific overrides
+# Faster rounds for development
+[consensus.test_params]
+round_duration = "500ms"
+epoch_duration = "30m"
+min_gas_price = 10

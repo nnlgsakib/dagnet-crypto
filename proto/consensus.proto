@@ -1,0 +1,219 @@
+syntax = "proto3";
+
+package ndagcoin.pb;
+
+option go_package = "github.com/ndag/ndagcoin/pkg/pb";
+
+import "event.proto";
+
+// Validator represents a network validator
+message Validator {
+  string address = 1;
+  bytes public_key = 2;
+  uint64 stake = 3;
+  uint64 commission_rate = 4;
+  uint64 max_commission_rate = 5;
+  uint64 commission_change_rate = 6;
+  string moniker = 7;
+  string identity = 8;
+  string website = 9;
+  string details = 10;
+  bool jailed = 11;
+  int64 jailed_until = 12;
+  uint64 missed_blocks = 13;
+  uint64 last_present = 14;
+  repeated string networking_addresses = 15;
+  uint64 voting_power = 16;
+}
+
+// ValidatorSet represents the current validator set
+message ValidatorSet {
+  repeated Validator validators = 1;
+  uint64 total_stake = 2;
+  uint64 quorum_threshold = 3;
+}
+
+// Account represents a user account
+message Account {
+  string address = 1;
+  uint64 balance = 2;
+  uint64 nonce = 3;
+  bytes public_key = 4;
+  bool is_smart_contract = 5;
+  bytes code_hash = 6;
+  bytes storage_root = 7;
+  uint64 delegated_stake = 8;
+  string validator = 9;
+  uint64 unbonding_height = 10;
+  int64 unbonding_time = 11;
+}
+
+// AccountStates represents all accounts
+message AccountStates {
+  repeated Account accounts = 1;
+  bytes state_root = 2;
+  uint64 total_accounts = 3;
+}
+
+// Token represents a fungible token
+message Token {
+  string token_id = 1;
+  string name = 2;
+  string symbol = 3;
+  uint64 decimals = 4;
+  uint64 total_supply = 5;
+  string admin_address = 6;
+  string metadata_uri = 7;
+  bool mintable = 8;
+  bool burnable = 9;
+  bool pausable = 10;
+  bool blacklistable = 11;
+  bool paused = 12;
+  repeated string blacklisted_addresses = 13;
+}
+
+// TokenBalance represents token balances for an account
+message TokenBalance {
+  string token_id = 1;
+  string account = 2;
+  uint64 balance = 3;
+}
+
+// TokenRegistry tracks all tokens
+message TokenRegistry {
+  map<string, Token> tokens = 1;
+  repeated TokenBalance balances = 2;
+  bytes merkle_root = 3;
+}
+
+// NFTCollection represents an NFT collection
+message NFTCollection {
+  string collection_id = 1;
+  string name = 2;
+  string symbol = 3;
+  string admin_address = 4;
+  string metadata_uri = 5;
+  bool is_mutable = 6;
+  uint64 total_supply = 7;
+}
+
+// NFT represents a non-fungible token
+message NFT {
+  string collection_id = 1;
+  string nft_id = 2;
+  string owner = 3;
+  string metadata_uri = 4;
+  repeated string attributes = 5;
+  bytes metadata_hash = 6;
+  bool is_burned = 7;
+  uint64 mint_height = 8;
+}
+
+// NFTRegistry tracks all NFTs
+message NFTRegistry {
+  map<string, NFTCollection> collections = 1;
+  map<string, NFT> nfts = 2;
+  bytes merkle_root = 3;
+}
+
+// LiquidityPool represents a DEX liquidity pool
+message LiquidityPool {
+  string pool_id = 1;
+  string token_a = 2;
+  string token_b = 3;
+  string creator = 4;
+  uint64 fee_rate = 5;
+  uint64 total_liquidity = 6;
+  uint64 reserve_a = 7;
+  uint64 reserve_b = 8;
+  uint64 price = 9;
+  uint64 total_fees_collected = 10;
+}
+
+// PoolPosition represents a liquidity position
+message PoolPosition {
+  string pool_id = 1;
+  string owner = 2;
+  uint64 liquidity_amount = 3;
+  uint64 accumulated_fees_a = 4;
+  uint64 accumulated_fees_b = 5;
+  int64 last_updated = 6;
+}
+
+// DexState represents DEX state
+message DexState {
+  map<string, LiquidityPool> pools = 1;
+  repeated PoolPosition positions = 2;
+  bytes merkle_root = 3;
+}
+
+// VRFProof for verifiable random function
+message VRFProof {
+  bytes proof = 1;
+  bytes hash = 2;
+  bytes public_key = 3;
+  bytes message = 4;
+}
+
+// RoundInfo contains information about a round
+message RoundInfo {
+  uint64 round_number = 1;
+  int64 start_time = 2;
+  int64 end_time = 3;
+  repeated string witnesses = 4;
+  repeated string famous_witnesses = 5;
+  bytes consensus_hash = 6;
+  uint64 num_events = 7;
+  uint64 num_transactions = 8;
+}
+
+// ConsensusSnapshot represents consensus state at a point in time
+message ConsensusSnapshot {
+  uint64 epoch = 1;
+  uint64 round = 2;
+  ValidatorSet validator_set = 3;
+  AccountStates account_states = 4;
+  TokenRegistry token_registry = 5;
+  NFTRegistry nft_registry = 6;
+  DexState dex_state = 7;
+  bytes state_hash = 8;
+  repeated Event finalized_events = 9;
+  repeated Event witness_events = 10;
+  map<string, RoundInfo> round_info = 11;
+  int64 timestamp = 12;
+}
+
+// FinalityDecision tracks finality decisions
+message FinalityDecision {
+  string event_id = 1;
+  string creator = 2;
+  uint64 round = 3;
+  bool is_famous = 4;
+  bool is_finalized = 5;
+  int64 finalized_time = 6;
+  string reason = 7;
+}
+
+// StakingInfo contains staking information
+message StakingInfo {
+  string validator = 1;
+  uint64 total_delegations = 2;
+  uint64 self_stake = 3;
+  uint64 commission_earned = 4;
+  uint64 rewards_earned = 5;
+  int64 last_compound = 6;
+  uint64 slashes_received = 7;
+  uint64 uptime_percentage = 8;
+}
+
+// EpochInfo contains epoch information
+message EpochInfo {
+  uint64 epoch_number = 1;
+  int64 start_time = 2;
+  int64 end_time = 3;
+  ValidatorSet validator_set = 4;
+  map<string, uint64> rewards_distributed = 5;
+  map<string, StakingInfo> staking_info = 6;
+  uint64 total_rewards = 7;
+  bytes epoch_hash = 8;
+}
