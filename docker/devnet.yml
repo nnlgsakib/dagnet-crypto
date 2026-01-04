@@ -1,0 +1,86 @@
+version: '3.8'
+
+services:
+  ndag-node-1:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.ndagd
+    container_name: ndag-node-1
+    ports:
+      - "9001:9000"
+      - "9091:9090"
+      - "90911:9091"
+    volumes:
+      - ./volumes/node1/data:/app/data
+      - ./volumes/node1/config:/app/config
+    environment:
+      - NDAG_CONFIG=/app/config/node1.toml
+      - NDAG_LOG_LEVEL=info
+    networks:
+      - ndag-devnet
+
+  ndag-node-2:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.ndagd
+    container_name: ndag-node-2
+    ports:
+      - "9002:9000"
+      - "9092:9090"
+      - "90921:9091"
+    volumes:
+      - ./volumes/node2/data:/app/data
+      - ./volumes/node2/config:/app/config
+    environment:
+      - NDAG_CONFIG=/app/config/node2.toml
+      - NDAG_LOG_LEVEL=info
+    networks:
+      - ndag-devnet
+
+  ndag-node-3:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.ndagd
+    container_name: ndag-node-3
+    ports:
+      - "9003:9000"
+      - "9093:9090"
+      - "90931:9091"
+    volumes:
+      - ./volumes/node3/data:/app/data
+      - ./volumes/node3/config:/app/config
+    environment:
+      - NDAG_CONFIG=/app/config/node3.toml
+      - NDAG_LOG_LEVEL=info
+    networks:
+      - ndag-devnet
+
+  ndag-monitor:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.monitor
+    container_name: ndag-monitor
+    ports:
+      - "3000:3000"
+    depends_on:
+      - ndag-node-1
+      - ndag-node-2
+      - ndag-node-3
+    environment:
+      - PROMETHEUS_URL=http://prometheus:9090
+    networks:
+      - ndag-devnet
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: ndag-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+    networks:
+      - ndag-devnet
+
+networks:
+  ndag-devnet:
+    driver: bridge

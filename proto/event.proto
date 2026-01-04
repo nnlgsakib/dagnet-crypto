@@ -1,0 +1,318 @@
+syntax = "proto3";
+
+package ndagcoin.pb;
+
+option go_package = "github.com/ndag/ndagcoin/pkg/pb";
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/any.proto";
+
+// Event represents a vertex in the DAG
+message Event {
+  // Unique identifier (hash)
+  string id = 1;
+  
+  // Creator validator address
+  string creator = 2;
+  
+  // Parent event IDs (2 or more)
+  repeated string parents = 3;
+  
+  // Timestamp in nanoseconds
+  int64 timestamp = 4;
+  
+  // Logical round number
+  uint64 round = 5;
+  
+  // Signature over event header
+  bytes signature = 6;
+  
+  // List of transactions included in this event
+  repeated Transaction transactions = 7;
+  
+  // VRF proof for this event (if claiming rewards)
+  bytes vrf_proof = 8;
+  
+  // Reward claim information
+  RewardClaim reward_claim = 9;
+  
+  // State hash after applying this event
+  bytes state_hash = 10;
+  
+  // Event metadata
+  EventMetadata metadata = 11;
+}
+
+// EventMetadata contains additional event information
+message EventMetadata {
+  // Lamport timestamp for ordering
+  uint64 lamport_timestamp = 1;
+  
+  // Whether this event is a witness
+  bool is_witness = 2;
+  
+  // Whether this event is famous
+  bool is_famous = 3;
+  
+  // Finality status
+  bool is_finalized = 4;
+  
+  // Computed round received
+  uint64 round_received = 5;
+  
+  // Parent history information for consensus
+  ParentHistory parent_history = 6;
+}
+
+// ParentHistory tracks parent references for consensus
+message ParentHistory {
+  // IDs of parent events
+  repeated string event_ids = 1;
+  
+  // Round number when parent was created
+  uint64 round = 2;
+  
+  // Whether parents are all strong (direct ancestry)
+  bool is_strongly_seen = 3;
+}
+
+// Transaction represents a signed state transition
+message Transaction {
+  // Unique transaction identifier (hash)
+  string id = 1;
+  
+  // Chain identifier (e.g., "ndag-mainnet")
+  string chain_id = 2;
+  
+  // Network identifier
+  string network_id = 3;
+  
+  // Sender account nonce
+  uint64 nonce = 4;
+  
+  // Transaction fee
+  uint64 fee = 5;
+  
+  // Gas limit for execution
+  uint64 gas_limit = 6;
+  
+  // Payload (oneof for different transaction types)
+  oneof payload {
+    TransferPayload transfer = 7;
+    CreateValidatorPayload create_validator = 8;
+    DelegateStakePayload delegate_stake = 9;
+    UndelegateStakePayload undelegate_stake = 10;
+    CreateTokenPayload create_token = 11;
+    MintTokenPayload mint_token = 12;
+    BurnTokenPayload burn_token = 13;
+    TransferTokenPayload transfer_token = 14;
+    CreateCollectionPayload create_collection = 15;
+    MintNFTPayload mint_nft = 16;
+    TransferNFTPayload transfer_nft = 17;
+    CreatePoolPayload create_pool = 18;
+    AddLiquidityPayload add_liquidity = 19;
+    RemoveLiquidityPayload remove_liquidity = 20;
+    SwapPayload swap = 21;
+    ClaimRewardsPayload claim_rewards = 22;
+    SlashingEvidencePayload slashing_evidence = 23;
+    GenesisPayload genesis_payload = 24;
+  }
+  
+  // Sender signature
+  bytes signature = 25;
+  
+  // Transaction timestamp
+  int64 timestamp = 26;
+  
+  // Public key of sender
+  bytes public_key = 27;
+}
+
+// TransferPayload for native NDAG token transfers
+message TransferPayload {
+  string to = 1;
+  uint64 amount = 2;
+  optional string memo = 3;
+}
+
+// CreateValidatorPayload for registering a validator
+message CreateValidatorPayload {
+  string validator_address = 1;
+  bytes public_key = 2;
+  uint64 commission_rate = 3;
+  uint64 max_commission_rate = 4;
+  uint64 commission_change_rate = 5;
+  string moniker = 6;
+  string identity = 7;
+  string website = 8;
+  string details = 9;
+}
+
+// DelegateStakePayload for delegating tokens to a validator
+message DelegateStakePayload {
+  string validator_address = 1;
+  uint64 amount = 2;
+}
+
+// UndelegateStakePayload for undelegating tokens
+message UndelegateStakePayload {
+  string validator_address = 1;
+  uint64 amount = 2;
+}
+
+// CreateTokenPayload for creating a new fungible token
+message CreateTokenPayload {
+  string token_id = 1;
+  string name = 2;
+  string symbol = 3;
+  uint64 decimals = 4;
+  uint64 initial_supply = 5;
+  string admin_address = 6;
+  string metadata_uri = 7;
+  bool mintable = 8;
+  bool burnable = 9;
+  bool pausable = 10;
+  bool blacklistable = 11;
+}
+
+// MintTokenPayload for minting new tokens
+message MintTokenPayload {
+  string token_id = 1;
+  string to = 2;
+  uint64 amount = 3;
+}
+
+// BurnTokenPayload for burning tokens
+message BurnTokenPayload {
+  string token_id = 1;
+  uint64 amount = 2;
+}
+
+// TransferTokenPayload for transferring tokens
+message TransferTokenPayload {
+  string token_id = 1;
+  string to = 2;
+  uint64 amount = 3;
+  optional string memo = 4;
+}
+
+// CreateCollectionPayload for creating NFT collections
+message CreateCollectionPayload {
+  string collection_id = 1;
+  string name = 2;
+  string symbol = 3;
+  string admin_address = 4;
+  string metadata_uri = 5;
+  bool is_mutable = 6;
+}
+
+// MintNFTPayload for minting new NFTs
+message MintNFTPayload {
+  string collection_id = 1;
+  string nft_id = 2;
+  string owner = 3;
+  string metadata_uri = 4;
+  repeated string attributes = 5;
+  bytes metadata_hash = 6;
+}
+
+// TransferNFTPayload for transferring NFT ownership
+message TransferNFTPayload {
+  string collection_id = 1;
+  string nft_id = 2;
+  string to = 3;
+}
+
+// CreatePoolPayload for creating DEX liquidity pools
+message CreatePoolPayload {
+  string token_a = 1;
+  string token_b = 2;
+  string creator = 3;
+  uint64 fee_rate = 4;
+  uint64 initial_price = 5;
+}
+
+// AddLiquidityPayload for adding liquidity to pools
+message AddLiquidityPayload {
+  string pool_id = 1;
+  uint64 amount_a = 2;
+  uint64 amount_b = 3;
+}
+
+// RemoveLiquidityPayload for removing liquidity
+message RemoveLiquidityPayload {
+  string pool_id = 1;
+  uint64 liquidity_amount = 2;
+}
+
+// SwapPayload for token swaps
+message SwapPayload {
+  string pool_id = 1;
+  string input_token = 2;
+  uint64 input_amount = 3;
+  uint64 min_output_amount = 4;
+  string receiver = 5;
+}
+
+// ClaimRewardsPayload for claiming accumulated rewards
+message ClaimRewardsPayload {
+  string validator_address = 1;
+}
+
+// SlashingEvidencePayload for submitting slashing evidence
+message SlashingEvidencePayload {
+  oneof evidence {
+    EquivocationEvidence equivocation = 1;
+    InvalidEventEvidence invalid_event = 2;
+    DoubleSpendEvidence double_spend = 3;
+  }
+}
+
+// GenesisPayload for the genesis event
+message GenesisPayload {
+  string treasury = 1;
+  uint64 initial_supply = 2;
+  ValidatorSet validator_set = 3;
+  AccountStates account_states = 4;
+  TokenRegistry token_registry = 5;
+  bytes state_hash = 6;
+}
+
+// RewardClaim for validator rewards
+message RewardClaim {
+  string validator = 1;
+  uint64 amount = 2;
+  uint64 epoch = 3;
+  bytes proof = 4;
+}
+
+// EquivocationEvidence for double-signing
+message EquivocationEvidence {
+  Event event_a = 1;
+  Event event_b = 2;
+  string validator = 3;
+}
+
+// InvalidEventEvidence for invalid events
+message InvalidEventEvidence {
+  Event invalid_event = 1;
+  string reason = 2;
+}
+
+// DoubleSpendEvidence for double spending
+message DoubleSpendEvidence {
+  Transaction tx_a = 1;
+  Transaction tx_b = 2;
+  string account = 3;
+}
+
+// TransactionResult tracks execution results
+message TransactionResult {
+  string tx_id = 1;
+  int32 status = 2; // 0 = success, 1 = failed
+  string error_message = 3;
+  uint64 gas_used = 4;
+  repeated bytes logs = 5;
+  bytes events_root = 6;
+  uint64 block_height = 7;
+}

@@ -1,0 +1,76 @@
+# NDAG Coin Testnet Configuration
+
+[network]
+network_id = "ndag-testnet"
+chain_id = "ndag-testnet-v1"
+data_dir = ".ndag/testnet"
+
+[p2p]
+enabled = true
+listen_address = "/ip4/0.0.0.0/tcp/9000"
+bootstrap_peers = [
+    # Testnet bootstrap nodes will be listed here
+    "/dns4/bootstrap-testnet.ndag.network/tcp/9000/p2p/12D3KooWB",
+    "/dns4/bootstrap2-testnet.ndag.network/tcp/9000/p2p/12D3KooWC"
+]
+max_peers = 100
+min_peers = 5
+connection_timeout = "30s"
+enable_nat_traversal = true
+enable_relay = true
+enable_metrics = true
+
+[consensus]
+enabled = true
+round_duration = "1s"
+epoch_duration = "24h"  # 1 day
+min_validator_stake = 10000000     # 10 NDAG
+max_validator_stake = 10000000000  # 10000 NDAG
+min_gas_price = 1000               # 1000 ndagosas
+max_gas_per_round = 10000000       # 10M gas per round
+target_gas_per_round = 8000000     # 8M target gas
+slashing_enabled = true
+
+[api]
+enabled = true
+listen_address = ":9090"
+enable_rest = true
+rest_listen_address = ":9091"
+enable_grpc = true
+grpc_listen_address = ":9092"
+cors_origins = ["https://testnet.ndag.network", "http://localhost:*"]
+enable_metrics = true
+
+[storage]
+backend = "leveldb"
+path = "data"
+enable_pruning = true
+pruning_keep_recent = "48h"
+pruning_interval = "2h"
+compaction_interval = "4h"
+
+[logging]
+level = "info"
+format = "json"
+file = "logs/ndagd.log"
+max_size = 100
+max_backups = 10
+max_age = 7
+compress = true
+
+[validator]
+enabled = false  # Set to true to run as validator
+address = ""
+commission_rate = 10000000  # 10% in ndagosas
+key_file = "validator.key"
+min_self_stake = 100000000  # 100 NDAG minimum
+
+[genesis]
+genesis_file = "genesis.pb"
+initial_supply = 100000000000000  # 100M NDAG in ndagosas
+
+# Testnet specific API limits
+[api.limits]
+max_request_size = "4MB"
+rate_limit_rps = 100
+rate_limit_burst = 200
