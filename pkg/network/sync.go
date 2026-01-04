@@ -478,3 +478,8 @@ func (sm *SyncManager) GetSyncStatus() (int, bool) {
     // This function provides info for monitoring sync progress
     return len(sm.peers), true
 }
+
+// mustMarshal is a compatibility wrapper for MustMarshal
+func mustMarshal(msg proto.Message) []byte {
+    return MustMarshal(msg)
+}
